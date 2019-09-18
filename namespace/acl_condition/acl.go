@@ -1,4 +1,4 @@
-package acl
+package acl_condition
 
 const (
 	// and
