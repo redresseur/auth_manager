@@ -5,11 +5,15 @@ import (
 )
 
 type aclCondition struct {
-	policy *ApiPolicy
+	Policy *ApiPolicy `json:"policy"`
 }
 
 type AclPermission struct {
 	AuthList map[string]bool `json:"authList"`
+}
+
+func NewAclCondition(policy *ApiPolicy) *aclCondition {
+	return &aclCondition{Policy: policy}
 }
 
 func (acc *aclCondition) Check(Permission interface{}) error {
@@ -18,7 +22,7 @@ func (acc *aclCondition) Check(Permission interface{}) error {
 		return err.ErrPermissionNotValid
 	}
 
-	if !acc.policy.check(ap.AuthList) {
+	if !acc.Policy.check(ap.AuthList) {
 		return err.ErrPermissionCheckFailure
 	}
 

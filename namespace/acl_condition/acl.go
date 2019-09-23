@@ -14,24 +14,24 @@ const (
 )
 
 type ApiPolicy struct {
-	pricinple     string
-	subPolicies   []*ApiPolicy
-	pricinpleType uint8
-	mOfN          int
+	Principle     string `json:"principle"`
+	SubPolicies   []*ApiPolicy `json:"subPolicies"`
+	PrincipleType uint8 `json:"principleType"`
+	MOfN          int `json:"mOfN"`
 }
 
 func (p *ApiPolicy) check(authList map[string]bool) bool {
 	res := true
-	switch p.pricinpleType {
+	switch p.PrincipleType {
 	case ANDPRICINPLE:
-		for _, p := range p.subPolicies {
+		for _, p := range p.SubPolicies {
 			if !p.check(authList) {
 				res = false
 				break
 			}
 		}
 	case ORPRICINPLE:
-		for _, p := range p.subPolicies {
+		for _, p := range p.SubPolicies {
 			if p.check(authList) {
 				res = true
 				break
@@ -40,18 +40,18 @@ func (p *ApiPolicy) check(authList map[string]bool) bool {
 			}
 		}
 	case BASEPRICINPLE:
-		if !authList[p.pricinple] {
+		if !authList[p.Principle] {
 			res = false
 		}
 	case MOfNPRICINPLE:
 		count := 0
-		for _, p := range p.subPolicies {
+		for _, p := range p.SubPolicies {
 			if p.check(authList) {
 				count++
 			}
 		}
 
-		if count < p.mOfN {
+		if count < p.MOfN {
 			res = false
 		}
 	default:
@@ -64,32 +64,32 @@ func (p *ApiPolicy) check(authList map[string]bool) bool {
 func AND(policies ...*ApiPolicy) *ApiPolicy {
 	res := ApiPolicy{}
 
-	res.subPolicies = append(res.subPolicies, policies...)
-	res.pricinpleType = ANDPRICINPLE
+	res.SubPolicies = append(res.SubPolicies, policies...)
+	res.PrincipleType = ANDPRICINPLE
 	return &res
 }
 
 func OR(policies ...*ApiPolicy) *ApiPolicy {
 	res := ApiPolicy{}
 
-	res.subPolicies = append(res.subPolicies, policies...)
-	res.pricinpleType = ORPRICINPLE
+	res.SubPolicies = append(res.SubPolicies, policies...)
+	res.PrincipleType = ORPRICINPLE
 	return &res
 }
 
 func MOfN(mOfN int, policies ...*ApiPolicy) *ApiPolicy {
 	res := ApiPolicy{}
 
-	res.subPolicies = append(res.subPolicies, policies...)
-	res.pricinpleType = MOfNPRICINPLE
-	res.mOfN = mOfN
+	res.SubPolicies = append(res.SubPolicies, policies...)
+	res.PrincipleType = MOfNPRICINPLE
+	res.MOfN = mOfN
 	return &res
 }
 
-func BASE(pricinple string) *ApiPolicy {
+func BASE(principle string) *ApiPolicy {
 	return &ApiPolicy{
-		pricinple:     pricinple,
-		pricinpleType: BASEPRICINPLE,
+		Principle:     principle,
+		PrincipleType: BASEPRICINPLE,
 	}
 }
 
