@@ -55,3 +55,16 @@ func TestNameSpace(t *testing.T) {
 	TestAddSubNameSpace(t)
 	t.Log(NameSpace(parentNamespace, "test/first"))
 }
+
+func TestCatchParam(t *testing.T)  {
+	ok, param :=  checkParam("test{test}")
+	assert.Equal(t, false, ok, "test{test} is not ok")
+
+	ok, param = checkParam("{test}{test}")
+	assert.Equal(t, false, ok, "{test}{test} is not ok")
+
+	ok, param = checkParam("{test}")
+	assert.Equal(t, true, ok, "{test} is not ok")
+
+	t.Logf("param is %s", param)
+}

@@ -3,6 +3,7 @@ package namespace
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 )
@@ -21,9 +22,16 @@ func (*EmptyCondition) Check(Permission interface{}) error {
 }
 
 // /aaa/bbbb/cccc
+// /aaa/{xx}/cccc
 type source_namespace struct {
 	// 空间名称
 	Name string `json:"name"`
+
+	// 是否為可變的
+	Variable bool `json:"variable"`
+
+	// 參數名稱
+	ParamName string `json:"variableName"`
 
 	// 子空間
 	SubNamespaces map[string]*source_namespace `json:"subNamespaces"`
@@ -91,6 +99,22 @@ func UpdateCondition(namespace *RestFulAuthorNamespace, ops ...func(namespace *s
 	return nil
 }
 
+func checkParam(str string) (bool, string) {
+	rc, _ := regexp.Compile(`(\{.[a-zA-Z\_0-9]+\})`)
+	res := rc.FindAllString(str, 1)
+	if len(res) != 1 {
+		return false, ""
+	}
+
+	param := res[0]
+	paramLen := len(param)
+	if paramLen != len(str) {
+		return false, ""
+	}
+
+	return true, param[1 : paramLen-1]
+}
+
 // path: 資源路徑
 func AddSubNameSpace(parent *RestFulAuthorNamespace, path string) (*RestFulAuthorNamespace, error) {
 	var tmp, pNamespace *source_namespace
@@ -102,9 +126,24 @@ func AddSubNameSpace(parent *RestFulAuthorNamespace, path string) (*RestFulAutho
 	}
 
 	pNamespace = parent.SrcNamespace
-	for _, s := range subs {
-		tmp = &source_namespace{Name: s, SubNamespaces: map[string]*source_namespace{}}
-		pNamespace.SubNamespaces[s] = tmp
+	pNamespace.l.Lock()
+	defer pNamespace.l.Unlock()
+
+	for _, sub := range subs {
+		if sub == "" {
+			continue
+		}
+
+		// 检查字段是否为可变量
+		isParam, param := checkParam(sub)
+		tmp = &source_namespace{
+			Name:          sub,
+			Variable:      isParam,
+			ParamName:     param,
+			SubNamespaces: map[string]*source_namespace{},
+		}
+
+		pNamespace.SubNamespaces[sub] = tmp
 		pNamespace = tmp
 	}
 
@@ -127,21 +166,35 @@ func NewNameSpace(name string, ops ...func(namespace *source_namespace)) *RestFu
 	return res
 }
 
-func NameSpace(parent *RestFulAuthorNamespace, path string) (*RestFulAuthorNamespace, error) {
+func NameSpace(parent *RestFulAuthorNamespace, path string) (res []*RestFulAuthorNamespace, err error) {
 	subs := strings.Split(path, "/")
 	if len(subs) == 0 {
 		return nil, errors.New("the path is invalid")
 	}
 
 	var ok bool
-	var psNamespace *source_namespace = parent.SrcNamespace
+	var psNamespace = parent.SrcNamespace
+
+	psNamespace.l.Lock()
+	defer psNamespace.l.Unlock()
+
 	for _, sub := range subs {
-		if psNamespace, ok = psNamespace.SubNamespaces[sub]; !ok{
+		if sub == "" {
+			continue
+		}
+
+		res = append(res, &RestFulAuthorNamespace{psNamespace})
+		if psNamespace, ok = psNamespace.SubNamespaces[sub]; !ok {
 			return nil, fmt.Errorf("the sub element %s in path %s was not found", sub, path)
 		}
 	}
 
-	return &RestFulAuthorNamespace{
-		SrcNamespace: psNamespace,
-	}, nil
+	return
+}
+
+func AuthorityCheck(namespace *RestFulAuthorNamespace, permission interface{}) error {
+	namespace.SrcNamespace.l.Lock()
+	defer namespace.SrcNamespace.l.Unlock()
+
+	return namespace.SrcNamespace.ConditionDefault.Check(permission)
 }
