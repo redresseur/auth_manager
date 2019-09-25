@@ -24,17 +24,12 @@ func (*EmptyCondition) Check(Permission interface{}) error {
 // /aaa/bbbb/cccc
 // /aaa/{xx}/cccc
 type source_namespace struct {
-	// 空间名称
-	Name string `json:"name"`
 
 	// 是否為可變的
 	Variable bool `json:"variable"`
 
 	// 參數名稱
 	ParamName string `json:"variableName"`
-
-	// 子空間
-	SubNamespaces map[string]*source_namespace `json:"subNamespaces"`
 
 	// 讀條件集合，每一個資源請求對應的條件
 	// 對應 GET/
@@ -60,39 +55,48 @@ type source_namespace struct {
 }
 
 type RestFulAuthorNamespace struct {
+	// 空间名称
+	Name string `json:"name"`
+
 	SrcNamespace *source_namespace `json:"srcNamespace"`
+	// 子空間
+	SubNamespaces map[string]*RestFulAuthorNamespace `json:"subNamespaces"`
+
+	Parent *RestFulAuthorNamespace
 }
 
-func WithReadCond(condition Condition) func(namespace *source_namespace) {
+type CondsOp func(namespace *source_namespace)
+
+func WithReadCond(condition Condition) CondsOp {
 	return func(namespace *source_namespace) {
 		namespace.ConditionRead = condition
 	}
 }
-func WithWriteCond(condition Condition) func(namespace *source_namespace) {
+func WithWriteCond(condition Condition) CondsOp {
 	return func(namespace *source_namespace) {
 		namespace.ConditionWrite = condition
 	}
 }
 
-func WithUpdateCond(condition Condition) func(namespace *source_namespace) {
+func WithUpdateCond(condition Condition) CondsOp {
 	return func(namespace *source_namespace) {
 		namespace.ConditionUpdate = condition
 	}
 }
 
-func WithDeleteCond(condition Condition) func(namespace *source_namespace) {
+func WithDeleteCond(condition Condition) CondsOp {
 	return func(namespace *source_namespace) {
 		namespace.ConditionDelete = condition
 	}
 }
 
-func WithDefaultCond(condition Condition) func(namespace *source_namespace) {
+func WithDefaultCond(condition Condition) CondsOp {
 	return func(namespace *source_namespace) {
 		namespace.ConditionDefault = condition
 	}
 }
 
-func UpdateCondition(namespace *RestFulAuthorNamespace, ops ...func(namespace *source_namespace)) error {
+func UpdateCondition(namespace *RestFulAuthorNamespace, ops ...CondsOp) error {
 	for _, op := range ops {
 		op(namespace.SrcNamespace)
 	}
@@ -115,48 +119,67 @@ func checkParam(str string) (bool, string) {
 	return true, param[1 : paramLen-1]
 }
 
+//func CopyCondition(dst *RestFulAuthorNamespace, src *RestFulAuthorNamespace )  {
+//	dst.SrcNamespace
+//}
+
+func ReverseFind(sp *RestFulAuthorNamespace, name string) (*RestFulAuthorNamespace, error) {
+	if sp.Name == name {
+		return sp, nil
+	}
+
+	if sp.Parent == nil {
+		return nil, errors.New("Namespace Not Found")
+	}
+
+	return ReverseFind(sp.Parent, name)
+}
+
 // path: 資源路徑
 func AddSubNameSpace(parent *RestFulAuthorNamespace, path string) (*RestFulAuthorNamespace, error) {
-	var tmp, pNamespace *source_namespace
+	var tmp *RestFulAuthorNamespace
 
-	sub := &RestFulAuthorNamespace{}
 	subs := strings.Split(path, "/")
 	if len(subs) == 0 {
 		return nil, errors.New("the path is invalid")
 	}
-
-	pNamespace = parent.SrcNamespace
-	pNamespace.l.Lock()
-	defer pNamespace.l.Unlock()
 
 	for _, sub := range subs {
 		if sub == "" {
 			continue
 		}
 
-		// 检查字段是否为可变量
-		isParam, param := checkParam(sub)
-		tmp = &source_namespace{
-			Name:          sub,
-			Variable:      isParam,
-			ParamName:     param,
-			SubNamespaces: map[string]*source_namespace{},
+		// 检查是否已经存在
+		if _, ok := parent.SubNamespaces[sub]; ok {
+			parent = parent.SubNamespaces[sub]
+			tmp = parent
+			continue
 		}
 
-		pNamespace.SubNamespaces[sub] = tmp
-		pNamespace = tmp
+		// 检查字段是否为可变量
+		isParam, param := checkParam(sub)
+		tmp = &RestFulAuthorNamespace{
+			SrcNamespace: &source_namespace{
+				Variable:  isParam,
+				ParamName: param,
+			},
+			Name:          sub,
+			Parent:        parent,
+			SubNamespaces: map[string]*RestFulAuthorNamespace{},
+		}
+
+		parent.SubNamespaces[sub] = tmp
+		parent = tmp
 	}
 
-	sub.SrcNamespace = tmp
-	return sub, nil
+	return parent, nil
 }
 
 func NewNameSpace(name string, ops ...func(namespace *source_namespace)) *RestFulAuthorNamespace {
 	res := &RestFulAuthorNamespace{
-		SrcNamespace: &source_namespace{
-			Name:          name,
-			SubNamespaces: map[string]*source_namespace{},
-		},
+		SrcNamespace:  &source_namespace{},
+		Name:          name,
+		SubNamespaces: map[string]*RestFulAuthorNamespace{},
 	}
 
 	for _, op := range ops {
@@ -173,18 +196,13 @@ func NameSpace(parent *RestFulAuthorNamespace, path string) (res []*RestFulAutho
 	}
 
 	var ok bool
-	var psNamespace = parent.SrcNamespace
-
-	psNamespace.l.Lock()
-	defer psNamespace.l.Unlock()
-
 	for _, sub := range subs {
 		if sub == "" {
 			continue
 		}
 
-		res = append(res, &RestFulAuthorNamespace{psNamespace})
-		if psNamespace, ok = psNamespace.SubNamespaces[sub]; !ok {
+		res = append(res, parent)
+		if parent, ok = parent.SubNamespaces[sub]; !ok {
 			return nil, fmt.Errorf("the sub element %s in path %s was not found", sub, path)
 		}
 	}
