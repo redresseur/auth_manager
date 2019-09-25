@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"github.com/redresseur/auth_manager/namespace/acl_condition"
 	"github.com/stretchr/testify/assert"
+	"regexp"
 	"testing"
 )
 
@@ -56,8 +57,8 @@ func TestNameSpace(t *testing.T) {
 	t.Log(NameSpace(parentNamespace, "test/first"))
 }
 
-func TestCatchParam(t *testing.T)  {
-	ok, param :=  checkParam("test{test}")
+func TestCatchParam(t *testing.T) {
+	ok, param := checkParam("test{test}")
 	assert.Equal(t, false, ok, "test{test} is not ok")
 
 	ok, param = checkParam("{test}{test}")
@@ -67,4 +68,16 @@ func TestCatchParam(t *testing.T)  {
 	assert.Equal(t, true, ok, "{test} is not ok")
 
 	t.Logf("param is %s", param)
+}
+
+func TestCatchParam1(t *testing.T) {
+	// rc, err := regexp.Compile(`/(\w[^\/]+){*}?([^/:]+)/`)
+
+	rc, err := regexp.Compile(`(\{.[a-zA-Z\_0-9]+\})`)
+
+	if !assert.NoError(t, err) {
+		t.SkipNow()
+	}
+
+	t.Log(rc.FindAllString("/person/{id}/name/{action}/test", -1))
 }

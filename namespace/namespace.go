@@ -105,7 +105,7 @@ func UpdateCondition(namespace *RestFulAuthorNamespace, ops ...CondsOp) error {
 
 func checkParam(str string) (bool, string) {
 	rc, _ := regexp.Compile(`(\{.[a-zA-Z\_0-9]+\})`)
-	res := rc.FindAllString(str, 1)
+	res := rc.FindAllString(str, -1)
 	if len(res) != 1 {
 		return false, ""
 	}
@@ -118,10 +118,6 @@ func checkParam(str string) (bool, string) {
 
 	return true, param[1 : paramLen-1]
 }
-
-//func CopyCondition(dst *RestFulAuthorNamespace, src *RestFulAuthorNamespace )  {
-//	dst.SrcNamespace
-//}
 
 func ReverseFind(sp *RestFulAuthorNamespace, name string) (*RestFulAuthorNamespace, error) {
 	if sp.Name == name {
@@ -158,15 +154,9 @@ func AddSubNameSpace(parent *RestFulAuthorNamespace, path string) (*RestFulAutho
 
 		// 检查字段是否为可变量
 		isParam, param := checkParam(sub)
-		tmp = &RestFulAuthorNamespace{
-			SrcNamespace: &source_namespace{
-				Variable:  isParam,
-				ParamName: param,
-			},
-			Name:          sub,
-			Parent:        parent,
-			SubNamespaces: map[string]*RestFulAuthorNamespace{},
-		}
+		tmp = NewNameSpace(sub, parent)
+		tmp.SrcNamespace.Variable = isParam
+		tmp.SrcNamespace.ParamName = param
 
 		parent.SubNamespaces[sub] = tmp
 		parent = tmp
@@ -175,11 +165,18 @@ func AddSubNameSpace(parent *RestFulAuthorNamespace, path string) (*RestFulAutho
 	return parent, nil
 }
 
-func NewNameSpace(name string, ops ...func(namespace *source_namespace)) *RestFulAuthorNamespace {
+func NewNameSpace(name string, parent *RestFulAuthorNamespace, ops ...func(namespace *source_namespace)) *RestFulAuthorNamespace {
 	res := &RestFulAuthorNamespace{
-		SrcNamespace:  &source_namespace{},
+		SrcNamespace: &source_namespace{
+			ConditionDefault: &EmptyCondition{},
+			ConditionUpdate:  &EmptyCondition{},
+			ConditionWrite:   &EmptyCondition{},
+			ConditionRead:    &EmptyCondition{},
+			ConditionDelete:  &EmptyCondition{},
+		},
 		Name:          name,
 		SubNamespaces: map[string]*RestFulAuthorNamespace{},
+		Parent:        parent,
 	}
 
 	for _, op := range ops {
@@ -202,8 +199,14 @@ func NameSpace(parent *RestFulAuthorNamespace, path string) (res []*RestFulAutho
 		}
 
 		res = append(res, parent)
-		if parent, ok = parent.SubNamespaces[sub]; !ok {
+		if parent.Name == sub {
+			continue
+		}
+
+		if _, ok = parent.SubNamespaces[sub]; !ok {
 			return nil, fmt.Errorf("the sub element %s in path %s was not found", sub, path)
+		} else {
+			parent = parent.SubNamespaces[sub]
 		}
 	}
 
