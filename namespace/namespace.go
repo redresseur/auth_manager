@@ -3,9 +3,15 @@ package namespace
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"regexp"
 	"strings"
 	"sync"
+)
+
+const (
+	ParamAll  = `*`
+	Separator = `/`
 )
 
 // 资源访问的条件
@@ -131,13 +137,44 @@ func ReverseFind(sp *RestFulAuthorNamespace, name string) (*RestFulAuthorNamespa
 	return ReverseFind(sp.Parent, name)
 }
 
+func PathParse(path string) []string {
+	if len(path) == 0 {
+		return []string{}
+	}
+
+	res := []string{}
+	sub := []rune{}
+	for _, c := range path {
+		if c == 0x2f {
+			if len(sub) > 0 {
+				res = append(res, string(sub))
+				sub = sub[:0]
+			}
+			res = append(res, Separator)
+		} else {
+			sub = append(sub, c)
+		}
+	}
+
+	if len(sub) > 0 {
+		res = append(res, string(sub))
+	}
+	return res
+}
+
 // path: 資源路徑
 func AddSubNameSpace(parent *RestFulAuthorNamespace, path string) (*RestFulAuthorNamespace, error) {
 	var tmp *RestFulAuthorNamespace
 
-	subs := strings.Split(path, "/")
+	subs := PathParse(path)
 	if len(subs) == 0 {
 		return nil, errors.New("the path is invalid")
+	}
+
+	if subs[0] != Separator && parent.Name != Separator {
+		parent, _ = AddSubNameSpace(parent, Separator)
+	} else if subs[0] == Separator && parent.Name == Separator {
+		subs = subs[1:]
 	}
 
 	for _, sub := range subs {
@@ -168,11 +205,11 @@ func AddSubNameSpace(parent *RestFulAuthorNamespace, path string) (*RestFulAutho
 func NewNameSpace(name string, parent *RestFulAuthorNamespace, ops ...func(namespace *source_namespace)) *RestFulAuthorNamespace {
 	res := &RestFulAuthorNamespace{
 		SrcNamespace: &source_namespace{
-			ConditionDefault: &EmptyCondition{},
-			ConditionUpdate:  &EmptyCondition{},
-			ConditionWrite:   &EmptyCondition{},
-			ConditionRead:    &EmptyCondition{},
-			ConditionDelete:  &EmptyCondition{},
+			//ConditionDefault: &EmptyCondition{},
+			//ConditionUpdate:  &EmptyCondition{},
+			//ConditionWrite:   &EmptyCondition{},
+			//ConditionRead:    &EmptyCondition{},
+			//ConditionDelete:  &EmptyCondition{},
 		},
 		Name:          name,
 		SubNamespaces: map[string]*RestFulAuthorNamespace{},
@@ -187,35 +224,84 @@ func NewNameSpace(name string, parent *RestFulAuthorNamespace, ops ...func(names
 }
 
 func NameSpace(parent *RestFulAuthorNamespace, path string) (res []*RestFulAuthorNamespace, err error) {
-	subs := strings.Split(path, "/")
-	if len(subs) == 0 {
+	var (
+		ok      bool
+		tmp     *RestFulAuthorNamespace
+		subs    []string
+		subsLen int
+	)
+
+	subs = PathParse(path)
+	if subsLen = len(subs); subsLen == 0 {
 		return nil, errors.New("the path is invalid")
 	}
 
-	var ok bool
+	if parent.Name != subs[0] {
+		return nil, fmt.Errorf("the first path is not matched")
+	} else {
+		res = append(res, parent)
+		subs = subs[1:]
+	}
+
 	for _, sub := range subs {
 		if sub == "" {
 			continue
 		}
 
-		res = append(res, parent)
-		if parent.Name == sub {
-			continue
-		}
-
-		if _, ok = parent.SubNamespaces[sub]; !ok {
-			return nil, fmt.Errorf("the sub element %s in path %s was not found", sub, path)
+		if tmp, ok = parent.SubNamespaces[sub]; ok {
+			parent = tmp
+			res = append(res, parent)
 		} else {
-			parent = parent.SubNamespaces[sub]
+			// * 表示匹配所有
+			if tmp, ok = parent.SubNamespaces[ParamAll]; ok {
+				parent = tmp
+				res = append(res, parent)
+			} else {
+				return nil, fmt.Errorf("the sub element %s in path %s was not found", sub, path)
+			}
 		}
 	}
 
 	return
 }
 
-func AuthorityCheck(namespace *RestFulAuthorNamespace, permission interface{}) error {
+func AuthorityCheck(namespace *RestFulAuthorNamespace, method string, permission interface{}) (err error) {
 	namespace.SrcNamespace.l.Lock()
 	defer namespace.SrcNamespace.l.Unlock()
 
-	return namespace.SrcNamespace.ConditionDefault.Check(permission)
+	cond := namespace.SrcNamespace.ConditionDefault
+	switch strings.ToUpper(method) {
+	case http.MethodGet:
+		{
+			if nil != namespace.SrcNamespace.ConditionRead {
+				cond = namespace.SrcNamespace.ConditionRead
+			}
+		}
+	case http.MethodPost:
+		{
+			if nil != namespace.SrcNamespace.ConditionWrite {
+				cond = namespace.SrcNamespace.ConditionWrite
+			}
+		}
+	case http.MethodDelete:
+		{
+			if nil != namespace.SrcNamespace.ConditionDelete {
+				cond = namespace.SrcNamespace.ConditionDelete
+			}
+		}
+	case http.MethodPut:
+		{
+			if nil != namespace.SrcNamespace.ConditionUpdate {
+				cond = namespace.SrcNamespace.ConditionDefault
+			}
+		}
+	default:
+
+	}
+
+	if cond != nil {
+		err = cond.Check(permission)
+	}
+
+	return
 }

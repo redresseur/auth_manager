@@ -9,18 +9,18 @@ var permission = func(ctx *gin.Context) (interface{}, error) {
 	return nil, nil
 }
 
-func RegistryPermission(pm func(ctx *gin.Context) (interface{}, error) )  {
+func RegistryPermission(pm func(ctx *gin.Context) (interface{}, error)) {
 	permission = pm
 }
 
 func CheckAuthority(ctx *gin.Context, namespaces []*namespace.RestFulAuthorNamespace) error {
 	p, err := permission(ctx)
-	if err != nil{
+	if err != nil {
 		return err
 	}
 
-	for _, sp := range namespaces{
-		if err = namespace.AuthorityCheck(sp, p); err != nil{
+	for _, sp := range namespaces {
+		if err = namespace.AuthorityCheck(sp, ctx.Request.Method, p); err != nil {
 			return err
 		}
 	}

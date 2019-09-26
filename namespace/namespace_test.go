@@ -17,7 +17,7 @@ func TestNewNameSpace(t *testing.T) {
 		acl_condition.BASE("GET DATA"))
 
 	cond := acl_condition.NewAclCondition(p)
-	parentNamespace = NewNameSpace("/", WithDefaultCond(cond))
+	parentNamespace = NewNameSpace("/", nil, WithDefaultCond(cond))
 
 	t.Logf("parentNamespace: %v", parentNamespace)
 }
@@ -25,7 +25,7 @@ func TestNewNameSpace(t *testing.T) {
 func TestAddSubNameSpace(t *testing.T) {
 	TestNewNameSpace(t)
 
-	childNamespace, err := AddSubNameSpace(parentNamespace, "test/first")
+	childNamespace, err := AddSubNameSpace(parentNamespace, "/test/first")
 	if !assert.NoError(t, err) {
 		t.SkipNow()
 	} else {
@@ -54,7 +54,13 @@ func TestMarshal(t *testing.T) {
 
 func TestNameSpace(t *testing.T) {
 	TestAddSubNameSpace(t)
-	t.Log(NameSpace(parentNamespace, "test/first"))
+	t.Log(NameSpace(parentNamespace, "/test/first"))
+}
+
+func TestParamAll(t *testing.T) {
+	parentNamespace = NewNameSpace("/", nil)
+	AddSubNameSpace(parentNamespace, "/test/*/all")
+	t.Log(NameSpace(parentNamespace, "/test/aa/all"))
 }
 
 func TestCatchParam(t *testing.T) {
@@ -72,7 +78,6 @@ func TestCatchParam(t *testing.T) {
 
 func TestCatchParam1(t *testing.T) {
 	// rc, err := regexp.Compile(`/(\w[^\/]+){*}?([^/:]+)/`)
-
 	rc, err := regexp.Compile(`(\{.[a-zA-Z\_0-9]+\})`)
 
 	if !assert.NoError(t, err) {
@@ -80,4 +85,17 @@ func TestCatchParam1(t *testing.T) {
 	}
 
 	t.Log(rc.FindAllString("/person/{id}/name/{action}/test", -1))
+}
+
+func TestParam(t *testing.T) {
+	rc, err := regexp.Compile(`(b*)`)
+	if !assert.NoError(t, err) {
+		t.SkipNow()
+	}
+
+	t.Log(rc.FindAllString("banga", -1))
+}
+
+func TestPathParse(t *testing.T) {
+	t.Log(PathParse("/person/{id}/name/{action}/test"))
 }
